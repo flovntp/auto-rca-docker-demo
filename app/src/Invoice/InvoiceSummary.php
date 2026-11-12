@@ -10,13 +10,15 @@ final class InvoiceSummary
     public function summarize(Invoice $invoice): array
     {
         $total = array_sum($invoice->lines);
+        $count = \count($invoice->lines);
 
         return [
             'id' => $invoice->id,
             'customer' => $invoice->customer,
             'total' => round($total, 2),
-            'lines' => \count($invoice->lines),
-            'average_line' => round($total / \count($invoice->lines), 2),
+            'lines' => $count,
+            // A draft invoice has no line yet: its average is 0, not undefined.
+            'average_line' => 0 === $count ? 0.0 : round($total / $count, 2),
         ];
     }
 }
