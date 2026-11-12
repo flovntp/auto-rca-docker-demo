@@ -31,6 +31,8 @@ services:
       MAX_PARALLEL: "2"
       # On a Synology NAS, set AGENT_CPU_SHARES=512 in .env: --cpus isn't supported there.
       AGENT_CPU_SHARES: ${AGENT_CPU_SHARES:-}
+      # On a kernel older than 3.17 (Synology): AGENT_PRELOAD=/usr/local/lib/libgetrandom-shim.so
+      AGENT_PRELOAD: ${AGENT_PRELOAD:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       GITHUB_REPO: ${GITHUB_REPO}

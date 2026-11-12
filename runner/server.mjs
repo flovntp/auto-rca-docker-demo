@@ -61,6 +61,8 @@ async function start(incident) {
 
   const agentEnv = { INCIDENT_JSON: JSON.stringify(incident), APP_LOGS: await appLogs() };
   for (const key of AGENT_ENV) if (process.env[key]) agentEnv[key] = process.env[key];
+  // A kernel without getrandom() (Synology): see agent/getrandom-shim.c.
+  if (process.env.AGENT_PRELOAD) agentEnv.LD_PRELOAD = process.env.AGENT_PRELOAD;
 
   // Values go through the environment (-e NAME without a value), never on the
   // command line where `ps` would show them.
