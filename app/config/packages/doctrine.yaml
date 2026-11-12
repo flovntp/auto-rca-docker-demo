@@ -1,0 +1,4 @@
+# DBAL only, for Messenger's queue (no ORM).
+doctrine:
+    dbal:
+        url: '%env(resolve:DATABASE_URL)%'

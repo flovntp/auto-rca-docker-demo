@@ -1,6 +1,8 @@
 services:
-  # The app: a 500 starts an agent, once per distinct bug.
+  # The app: a 500 is queued for triage, once per distinct bug. It holds no
+  # API key nor GitHub token.
   app:
+    image: auto-rca-app
     build:
       context: ./app
       args:
@@ -9,8 +11,6 @@ services:
     environment:
       APP_SECRET: ${APP_SECRET}
       RCA_ENABLED: ${RCA_ENABLED:-1}
-      RCA_RUNNER_URL: http://runner:8080
-      RCA_RUNNER_SECRET: ${RCA_RUNNER_SECRET}
     ports:
       - "8090:80"
     volumes:
@@ -20,7 +20,26 @@ services:
       - app-data:/app/var/data
     restart: unless-stopped
 
-  # The only service with the Docker socket. No published port: only the app,
+  # The worker: same image, consumes the queue. A small model triages each
+  # incident (Symfony AI), opens the issue, and asks the runner for a coding
+  # agent only for a bug the code can fix.
+  worker:
+    image: auto-rca-app
+    command: ["php", "bin/console", "messenger:consume", "async", "-vv", "--time-limit=3600", "--memory-limit=256M"]
+    depends_on: [app]
+    environment:
+      APP_SECRET: ${APP_SECRET}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      TRIAGE_MODEL: ${TRIAGE_MODEL:-claude-haiku-5-5}
+      GITHUB_ISSUES_TOKEN: ${GITHUB_ISSUES_TOKEN}
+      GITHUB_REPO: ${GITHUB_REPO}
+      RCA_RUNNER_URL: http://runner:8080
+      RCA_RUNNER_SECRET: ${RCA_RUNNER_SECRET}
+    volumes:
+      - app-data:/app/var/data
+    restart: unless-stopped
+
+  # The only service with the Docker socket. No published port: only the worker,
   # on the project's network, can reach it.
   runner:
     build: ./runner

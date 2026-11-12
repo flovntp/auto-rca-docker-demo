@@ -1,0 +1,16 @@
+ai:
+    platform:
+        anthropic:
+            api_key: '%env(ANTHROPIC_API_KEY)%'
+
+    agent:
+        # Reads a new server error and the code around it, and answers with a
+        # TriageVerdict (structured output). A small, cheap model: it runs on
+        # every distinct 500, the coding agent only on some.
+        triage:
+            platform: 'ai.platform.anthropic'
+            model: '%env(TRIAGE_MODEL)%'
+            prompt:
+                file: '%kernel.project_dir%/config/triage/prompt.md'
+            tools:
+                - 'App\Triage\SourceCode'

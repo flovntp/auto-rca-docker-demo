@@ -2,24 +2,26 @@
 
 namespace App\AutoRca;
 
+use App\Triage\TriageIncident;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\Event\TerminateEvent;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
- * On every server error (5xx) in production, starts an agent that looks for
- * the root cause, once per distinct bug.
+ * On every server error (5xx) in production, once per distinct bug: hands
+ * the incident to the worker, which triages it (see App\Triage).
  */
 final class AutoRcaSubscriber implements EventSubscriberInterface, ResetInterface
 {
     private ?Incident $pending = null;
 
     public function __construct(
-        private readonly RunnerClient $runner,
+        private readonly MessageBusInterface $bus,
         #[Autowire(env: 'bool:RCA_ENABLED')] private readonly bool $enabled,
         #[Autowire(env: 'APP_REVISION')] private readonly string $revision,
         #[Autowire('%kernel.project_dir%')] private readonly string $projectDir,
@@ -54,15 +56,20 @@ final class AutoRcaSubscriber implements EventSubscriberInterface, ResetInterfac
     }
 
     /**
-     * The runner is called once the response is sent: the visitor doesn't
-     * wait for it.
+     * Queued once the response is sent: the visitor doesn't wait for it, and
+     * the web app holds no API key nor GitHub token, only the queue.
      */
     public function onTerminate(TerminateEvent $event): void
     {
-        if (null !== $this->pending) {
-            $this->runner->start($this->pending);
+        try {
+            if (null !== $this->pending) {
+                $this->bus->dispatch(new TriageIncident($this->pending));
+            }
+        } catch (\Throwable) {
+            // The page has already failed: the triage must never make it worse.
+        } finally {
+            $this->reset();
         }
-        $this->reset();
     }
 
     public function reset(): void

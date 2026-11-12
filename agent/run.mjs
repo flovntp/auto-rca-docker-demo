@@ -34,6 +34,8 @@ async function github(method, path, body) {
 const fence = (text) => '```\n' + text.replaceAll('```', "'''") + '\n```';
 
 async function findOrOpenIssue() {
+  // Opened by the triage (episode 2): the issue already holds its verdict.
+  if (incident.issue) return { issue: await github('GET', `/repos/${GITHUB_REPO}/issues/${incident.issue}`), isNew: true };
   const open = await github('GET', `/repos/${GITHUB_REPO}/issues?labels=${LABEL}&state=open&per_page=100`);
   const existing = open.find((issue) => issue.title.includes(`[${incident.signature}]`));
   if (existing) return { issue: existing, isNew: false };
@@ -100,7 +102,10 @@ ${JSON.stringify(incident, null, 2)}
 <logs>
 ${process.env.APP_LOGS || '(no logs)'}
 </logs>
-
+${incident.triage ? `
+A first triage, by a smaller model that only read the code, suggests this root cause (confidence: ${incident.triage.confidence}):
+"${incident.triage.suspectedCause}". It is a hypothesis to check, not a conclusion: confirm or refute it.
+` : ''}
 What to do:
 1. Find the root cause: read the code where the exception was thrown and follow the stack trace. Use the logs to confirm it.
 2. If it is a bug in the code, write a PHPUnit test in app/tests/ that reproduces it, run it and see it fail:
@@ -167,7 +172,7 @@ if (!isNew) {
   await github('POST', `/repos/${GITHUB_REPO}/issues/${issue.number}/comments`, { body: `Seen again at ${incident.occurredAt} (\`${incident.request}\`).` });
   process.exit(0);
 }
-log(`issue #${issue.number} opened: ${issue.html_url}`);
+log(`issue #${issue.number}${incident.issue ? ' (from the triage)' : ' opened'}: ${issue.html_url}`);
 
 await sh('git', ['-c', authHeader(), 'clone', '--quiet', `https://github.com/${GITHUB_REPO}.git`, REPO_DIR], { cwd: '/home/agent' });
 const known = incident.revision && (await git('cat-file', '-t', incident.revision).catch(() => '')) === 'commit';
