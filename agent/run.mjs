@@ -182,7 +182,7 @@ log(`claude done: ${result.num_turns} turns, $${result.total_cost_usd?.toFixed(2
 
 const report = existsSync(`${REPO_DIR}/.rca/report.md`) ? readFileSync(`${REPO_DIR}/.rca/report.md`, 'utf8') : result.result;
 const title = existsSync(`${REPO_DIR}/.rca/title.txt`) ? readFileSync(`${REPO_DIR}/.rca/title.txt`, 'utf8').trim().split('\n')[0] : `Fix ${incident.class}`;
-const footer = `\n\n---\n_${result.num_turns} turns, $${result.total_cost_usd?.toFixed(2)}, model \`${MODEL}\`._`;
+const footer = `\n\n---\n_${result.num_turns} turns, $${result.total_cost_usd?.toFixed(2)}, ${Math.round(result.duration_ms / 1000)} s, model \`${MODEL}\`._`;
 
 if (!(await git('status', '--porcelain'))) {
   log('no code change: the report goes on the issue');
