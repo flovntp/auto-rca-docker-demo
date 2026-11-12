@@ -1,0 +1,48 @@
+name: rca-demo
+
+services:
+  # The app: a 500 starts an agent, once per distinct bug.
+  app:
+    build:
+      context: ./app
+      args:
+        APP_REVISION: ${APP_REVISION:-}
+    container_name: rca-demo-app
+    environment:
+      APP_SECRET: ${APP_SECRET}
+      RCA_ENABLED: "1"
+      RCA_RUNNER_URL: http://runner:8080
+      RCA_RUNNER_SECRET: ${RCA_RUNNER_SECRET}
+    ports:
+      - "8090:80"
+    volumes:
+      # The incidents already handed to an agent, kept across restarts.
+      - rca-share:/app/var/share
+    restart: unless-stopped
+
+  # The only service with the Docker socket. No published port: only the app,
+  # on the project's network, can reach it.
+  runner:
+    build: ./runner
+    environment:
+      RCA_RUNNER_SECRET: ${RCA_RUNNER_SECRET}
+      APP_CONTAINER: rca-demo-app
+      AGENT_IMAGE: rca-agent:latest
+      MAX_PARALLEL: "2"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_REPO: ${GITHUB_REPO}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-5-5}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+  # Not a service: declared so that `docker compose build` builds the image
+  # the runner starts, one container per incident.
+  agent:
+    build: ./agent
+    image: rca-agent:latest
+    profiles: [build-only]
+
+volumes:
+  rca-share:
