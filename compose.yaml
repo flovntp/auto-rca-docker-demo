@@ -8,7 +8,7 @@ services:
     container_name: rca-demo-app
     environment:
       APP_SECRET: ${APP_SECRET}
-      RCA_ENABLED: "1"
+      RCA_ENABLED: ${RCA_ENABLED:-1}
       RCA_RUNNER_URL: http://runner:8080
       RCA_RUNNER_SECRET: ${RCA_RUNNER_SECRET}
     ports:
@@ -16,6 +16,8 @@ services:
     volumes:
       # The incidents already handed to an agent, kept across restarts.
       - rca-share:/app/var/share
+      # The payments' SQLite database.
+      - app-data:/app/var/data
     restart: unless-stopped
 
   # The only service with the Docker socket. No published port: only the app,
@@ -42,5 +44,14 @@ services:
     image: rca-agent:latest
     profiles: [build-only]
 
+  # A ramp-up on the app: docker compose --profile load run --rm load
+  load:
+    image: grafana/k6:2.3.0
+    profiles: [load]
+    command: run --quiet /scripts/payments.js
+    volumes:
+      - ./load:/scripts:ro
+
 volumes:
   rca-share:
+  app-data:

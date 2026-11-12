@@ -11,3 +11,5 @@ ENV APP_ENV=prod APP_DEBUG=0 APP_REVISION=${APP_REVISION} SERVER_NAME=:80
 WORKDIR /app
 COPY --from=vendor /app /app
 RUN php bin/console cache:warmup && mkdir -p var/share
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+CMD ["--config", "/etc/frankenphp/Caddyfile", "--adapter", "caddyfile"]
