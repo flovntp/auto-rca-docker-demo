@@ -11,7 +11,8 @@ GET /invoices/3 → 500 → app (subscriber) → runner (Docker socket) → agen
 
 | Part | What it does |
 |---|---|
-| `app/` | Symfony 8.1 on FrankenPHP. `InvoiceSummary` has a planted bug: a draft invoice with no lines divides by zero. `src/AutoRca/` claims each incident once (`mkdir` on a volume) and sends it, signed with HMAC, to the runner after the response. |
+| `app/` | Symfony 8.1 on FrankenPHP, with two planted bugs. `POST /invoices/{id}/payments` records a payment in a deferred SQLite transaction (read, then write): it only fails under load, with `database is locked`. `GET /invoices/3` divides by zero (a draft invoice has no lines). `src/AutoRca/` claims each incident once (`mkdir` on a volume) and sends it, signed with HMAC, to the runner after the response. |
+| `load/` | A [k6](https://k6.io) ramp-up from 1 to 40 virtual users paying invoice 1, then a check that the payments add up. |
 | `runner/` | ~120 lines of Node, no dependency. The only service with the Docker socket, no published port. Checks the signature, reads the app's last log lines, starts one agent container per incident, 2 at a time, killed after 20 minutes. |
 | `agent/` | PHP 8.4, Composer, git and Claude Code. `run.mjs` opens the issue, clones the repo at the running revision, runs `claude -p` with an allowlist of tools, then commits, pushes and opens the pull request. Claude Code never gets the GitHub token. |
 
@@ -26,9 +27,23 @@ echo "APP_REVISION=$(git rev-parse --short HEAD)" >> .env
 docker compose --profile build-only build      # app, runner and the agent image
 docker compose up -d app runner
 curl -i http://localhost:8090/invoices/1       # 200
-curl -i http://localhost:8090/invoices/3       # 500: an agent starts
+docker compose --profile load run --rm load    # the ramp-up: ~10% of the payments fail, an agent starts
 docker compose logs -f runner                  # follow it
+curl -i http://localhost:8090/invoices/3       # the other bug: a second agent
 ```
+
+`RCA_ENABLED=0 docker compose up -d app` runs the app without starting agents, to load it on its own.
+
+### On a Synology NAS
+
+Its kernel (3.10 on DSM 7) is older than what the agent's tools expect. Add to `.env`:
+
+```bash
+AGENT_CPU_SHARES=512                                    # --cpus fails: no CFS scheduler
+AGENT_PRELOAD=/usr/local/lib/libgetrandom-shim.so       # git fails: no getrandom() syscall
+```
+
+`--pids-limit` is silently ignored there. Use `sudo docker-compose -f compose.yaml …` (Compose v1).
 
 The GitHub token should be a [fine-grained token](https://github.com/settings/personal-access-tokens/new) limited to
 your repository, with **Contents**, **Issues** and **Pull requests** in read and write.
