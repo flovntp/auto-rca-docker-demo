@@ -16,7 +16,7 @@ final class InvoiceSummary
             'customer' => $invoice->customer,
             'total' => round($total, 2),
             'lines' => \count($invoice->lines),
-            'average_line' => round($total / \count($invoice->lines), 2),
+            'average_line' => [] === $invoice->lines ? 0.0 : round($total / \count($invoice->lines), 2),
         ];
     }
 }
