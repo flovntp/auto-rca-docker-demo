@@ -9,7 +9,8 @@ const { GITHUB_TOKEN, GITHUB_REPO } = process.env;
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-5-5';
 const MAX_TURNS = process.env.MAX_TURNS || '40';
 const REPO_DIR = '/home/agent/repo';
-const BRANCH = `auto-rca/${incident.signature}`;
+// One branch per issue: the same bug can come back after its first pull request.
+const BRANCH = `auto-rca/${incident.signature}${incident.issue ? `-${incident.issue}` : ''}`;
 const LABEL = 'auto-rca';
 
 const log = (...args) => console.log('·', ...args);

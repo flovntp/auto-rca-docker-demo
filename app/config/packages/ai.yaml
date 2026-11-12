@@ -9,7 +9,13 @@ ai:
         # every distinct 500, the coding agent only on some.
         triage:
             platform: 'ai.platform.anthropic'
-            model: '%env(TRIAGE_MODEL)%'
+            model:
+                name: '%env(TRIAGE_MODEL)%'
+                # The bridge's default is 1,000 output tokens, thinking included
+                # (Haiku 5.5 thinks by default): verdicts were cut in the middle of
+                # their JSON. A ceiling, not a cost.
+                options:
+                    max_tokens: 8000
             prompt:
                 file: '%kernel.project_dir%/config/triage/prompt.md'
             tools:
