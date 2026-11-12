@@ -6,6 +6,8 @@ use App\AutoRca\Incident;
 use App\AutoRca\RunnerClient;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\AgentInterface;
+use Symfony\AI\Platform\Result\MultiPartResult;
+use Symfony\AI\Platform\Result\ResultInterface;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -37,8 +39,8 @@ final readonly class TriageIncidentHandler
 
         $started = microtime(true);
         $result = $this->agent->call($this->describe($incident), ['response_format' => TriageVerdict::class]);
-        $verdict = $result->getContent();
-        if (!$verdict instanceof TriageVerdict) {
+        $verdict = $this->verdict($result->getResult());
+        if (null === $verdict) {
             throw new \UnexpectedValueException('The triage agent gave no verdict.');
         }
         $usage = $this->usage($result->getMetadata()->get('token_usage'), microtime(true) - $started);
@@ -56,6 +58,21 @@ final readonly class TriageIncidentHandler
         if ($verdict->startCodingAgent && IncidentCategory::CodeBug === $verdict->category) {
             $this->runner->start($incident, $issue['number'], $verdict);
         }
+    }
+
+    /**
+     * After tool calls, the answer comes in parts (the model's text, then the
+     * structured output): the verdict is the part that is a TriageVerdict.
+     */
+    private function verdict(ResultInterface $result): ?TriageVerdict
+    {
+        foreach ($result instanceof MultiPartResult ? $result : [$result] as $part) {
+            if ($part->getContent() instanceof TriageVerdict) {
+                return $part->getContent();
+            }
+        }
+
+        return null;
     }
 
     private function describe(Incident $incident): string
