@@ -86,7 +86,9 @@ final readonly class TriageIncidentHandler
     {
         $parts = [\sprintf('%.1f s', $seconds)];
         if ($tokens instanceof TokenUsageInterface) {
-            $parts[] = \sprintf('%d input tokens, %d output tokens', $tokens->getPromptTokens() ?? 0, $tokens->getCompletionTokens() ?? 0);
+            // With prompt caching, most of the input is counted as cache reads or writes.
+            $input = ($tokens->getPromptTokens() ?? 0) + ($tokens->getCacheReadTokens() ?? 0) + ($tokens->getCacheCreationTokens() ?? 0);
+            $parts[] = \sprintf('%d input tokens (%d read from cache), %d output tokens', $input, $tokens->getCacheReadTokens() ?? 0, $tokens->getCompletionTokens() ?? 0);
         }
 
         return implode(', ', $parts);

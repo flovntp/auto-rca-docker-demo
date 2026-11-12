@@ -44,7 +44,7 @@ final readonly class GitHubIssues
 
         $next = $verdict->startCodingAgent
             ? 'A coding agent has been started: its pull request will close this issue.'
-            : '**No coding agent**: '.$verdict->recommendation;
+            : '**No coding agent started**: a human decides what to do.';
         $fence = static fn (string $text): string => "```\n".str_replace('```', "'''", $text)."\n```";
 
         return $this->request('POST', '/issues', ['json' => [
