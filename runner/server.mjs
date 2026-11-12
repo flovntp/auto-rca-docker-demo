@@ -17,6 +17,11 @@ const APP_CONTAINER = env('APP_CONTAINER');
 const MAX_PARALLEL = Number(env('MAX_PARALLEL', '2'));
 const MAX_QUEUED = 20;
 const RUN_TIMEOUT_MS = Number(env('RUN_TIMEOUT_MINUTES', '20')) * 60_000;
+// Some kernels (Synology's) have no CFS scheduler: `--cpus` fails there, and
+// a relative weight with `--cpu-shares` is all there is.
+const CPU_LIMIT = process.env.AGENT_CPU_SHARES
+  ? ['--cpu-shares', process.env.AGENT_CPU_SHARES]
+  : ['--cpus', env('AGENT_CPUS', '1')];
 // Passed to the agent as they are, from the runner's own environment.
 const AGENT_ENV = ['ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'GITHUB_REPO', 'CLAUDE_MODEL', 'MAX_TURNS'];
 for (const name of ['ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'GITHUB_REPO']) env(name);
@@ -64,7 +69,8 @@ async function start(incident) {
     // Default bridge network: internet for the Anthropic and GitHub APIs, no
     // route to the app, its database or the runner.
     '--network', 'bridge',
-    '--memory', '2g', '--cpus', '1', '--pids-limit', '512',
+    // --pids-limit is silently ignored by kernels without the pids cgroup.
+    '--memory', '2g', ...CPU_LIMIT, '--pids-limit', '512',
     '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
     ...Object.keys(agentEnv).flatMap((key) => ['-e', key]),
     AGENT_IMAGE,
