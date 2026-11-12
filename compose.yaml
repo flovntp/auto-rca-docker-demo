@@ -1,5 +1,3 @@
-name: rca-demo
-
 services:
   # The app: a 500 starts an agent, once per distinct bug.
   app:
