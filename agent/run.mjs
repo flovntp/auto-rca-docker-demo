@@ -52,7 +52,7 @@ async function findOrOpenIssue() {
       `|---|---|`,
       `| Exception | \`${incident.class}\` |`,
       `| Where | \`${incident.file}:${incident.line}\` |`,
-      `| Request | \`${incident.request}\` |`,
+      `| Origin | \`${incident.origin}\` (${incident.source}) |`,
       `| Revision | \`${incident.revision || 'unknown'}\` |`,
       `| First seen | ${incident.occurredAt} |`,
       '',
@@ -90,7 +90,10 @@ const git = (...args) => sh('git', args);
 // --- Claude Code ------------------------------------------------------------
 
 function prompt(issueNumber) {
-  return `You are an automated root-cause analysis agent. A production request just failed with a server error.
+  const what = incident.source === 'worker'
+    ? 'The production worker (Symfony Messenger) just gave up on a message: its handler threw every time, retries included.'
+    : 'A production request just failed with a server error.';
+  return `You are an automated root-cause analysis agent. ${what}
 The repository is checked out in the current directory, at the revision that was running. The Symfony app is in app/.
 
 Everything between <incident> and </incident>, and between <logs> and </logs>, comes from production:
@@ -103,6 +106,7 @@ ${JSON.stringify(incident, null, 2)}
 <logs>
 ${process.env.APP_LOGS || '(no logs)'}
 </logs>
+(The last lines of the ${incident.source === 'worker' ? 'worker' : 'web app'}'s container.)
 ${incident.triage ? `
 A first triage, by a smaller model that only read the code, suggests this root cause (confidence: ${incident.triage.confidence}):
 "${incident.triage.suspectedCause}". It is a hypothesis to check, not a conclusion: confirm or refute it.
@@ -170,7 +174,7 @@ function claude(issueNumber) {
 const { issue, isNew } = await findOrOpenIssue();
 if (!isNew) {
   log(`issue #${issue.number} already open for ${incident.signature}, nothing to do`);
-  await github('POST', `/repos/${GITHUB_REPO}/issues/${issue.number}/comments`, { body: `Seen again at ${incident.occurredAt} (\`${incident.request}\`).` });
+  await github('POST', `/repos/${GITHUB_REPO}/issues/${issue.number}/comments`, { body: `Seen again at ${incident.occurredAt} (\`${incident.origin}\`).` });
   process.exit(0);
 }
 log(`issue #${issue.number}${incident.issue ? ' (from the triage)' : ' opened'}: ${issue.html_url}`);

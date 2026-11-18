@@ -69,7 +69,7 @@ final readonly class GitHubIssues
                 '',
                 '## Incident',
                 '',
-                \sprintf('`%s` at `%s:%d`, on `%s`, revision `%s`, first seen %s.', $incident->class, $incident->file, $incident->line, $incident->request, $incident->revision ?: 'unknown', $incident->occurredAt),
+                \sprintf('`%s` at `%s:%d`, on `%s`, revision `%s`, first seen %s.', $incident->class, $incident->file, $incident->line, $incident->origin, $incident->revision ?: 'unknown', $incident->occurredAt),
                 '',
                 $fence($incident->message),
                 '<details><summary>Stack trace</summary>',

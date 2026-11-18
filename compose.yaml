@@ -22,13 +22,16 @@ services:
 
   # The worker: same image, consumes the queue. A small model triages each
   # incident (Symfony AI), opens the issue, and asks the runner for a coding
-  # agent only for a bug the code can fix.
+  # agent only for a bug the code can fix. A message it gives up on, after its
+  # retries, is an incident too.
   worker:
     image: auto-rca-app
+    container_name: rca-demo-worker
     command: ["php", "bin/console", "messenger:consume", "async", "-vv", "--time-limit=3600", "--memory-limit=256M"]
     depends_on: [app]
     environment:
       APP_SECRET: ${APP_SECRET}
+      RCA_ENABLED: ${RCA_ENABLED:-1}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       TRIAGE_MODEL: ${TRIAGE_MODEL:-claude-haiku-5-5}
       GITHUB_ISSUES_TOKEN: ${GITHUB_ISSUES_TOKEN}
@@ -36,6 +39,8 @@ services:
       RCA_RUNNER_URL: http://runner:8080
       RCA_RUNNER_SECRET: ${RCA_RUNNER_SECRET}
     volumes:
+      # The same claims as the app's: one triage per bug, wherever it fails.
+      - rca-share:/app/var/share
       - app-data:/app/var/data
     restart: unless-stopped
 
@@ -46,6 +51,7 @@ services:
     environment:
       RCA_RUNNER_SECRET: ${RCA_RUNNER_SECRET}
       APP_CONTAINER: rca-demo-app
+      WORKER_CONTAINER: rca-demo-worker
       AGENT_IMAGE: rca-agent:latest
       MAX_PARALLEL: "2"
       # On a Synology NAS, set AGENT_CPU_SHARES=512 in .env: --cpus isn't supported there.

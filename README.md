@@ -1,25 +1,29 @@
 # Auto-RCA on Docker: triage every 500, then a Claude Code agent for the code bugs
 
-A Symfony app that, on every **distinct** server error in production, asks a small model to triage it, then starts a
+A Symfony app that, on every **distinct** server error in production (a 500 in the web app, or a message its worker
+gives up on after its retries), asks a small model to triage it, then starts a
 short-lived Docker container running [Claude Code](https://docs.claude.com/en/docs/claude-code) headless for the
 incidents a change in the code can fix. The coding agent finds the root cause, writes a test that reproduces the bug,
 fixes it, and opens a pull request that closes the triage's issue. GitHub Actions runs the tests on the pull request.
 A human reviews and merges.
 
 ```
-500 → app (subscriber) → queue → worker (Symfony AI triage, Claude Haiku) → GitHub issue
-                                        └─ code bug → runner (Docker socket) → agent container (Claude Code) → PR → CI
+500 → app (subscriber) ──────────┐
+                                 ├→ queue → worker (Symfony AI triage, Claude Haiku) → GitHub issue
+message failed, retries spent ───┘                └─ code bug → runner (Docker socket) → agent container (Claude Code) → PR → CI
+  (worker, subscriber)
 ```
 
-Two episodes, two tags: [`episode-1`](../../tree/episode-1) (a coding agent on every distinct 500) and
-[`episode-2`](../../tree/episode-2) (a triage with Symfony AI first).
+Three episodes: [`episode-1`](../../tree/episode-1) (a coding agent on every distinct 500),
+[`episode-2`](../../tree/episode-2) (a triage with Symfony AI first) and episode 3, on `main` (the worker's failures
+too).
 
 | Part | What it does |
 |---|---|
-| `app/` | Symfony 8.1 on FrankenPHP, with three planted bugs. `GET /invoices/{id}/total/{currency}` calls an exchange-rates provider that is down (`rates-api` doesn't exist): no change in the code fixes it. `POST /invoices/{id}/payments` records a payment in a deferred SQLite transaction (read, then write): it only fails under load, with `database is locked`. `GET /invoices/3` divides by zero (a draft invoice has no lines). `src/AutoRca/` claims each incident once (`mkdir` on a volume) and queues it (Messenger, SQLite) after the response: the web app holds no API key nor token. |
-| `app/src/Triage/` | The worker (same image, `messenger:consume`). A [Symfony AI](https://symfony.com/doc/current/ai/index.html) agent on Claude Haiku 5.5 reads the incident and the code with two read-only tools (`SourceCode`), and answers with a `TriageVerdict` (structured output): category, cause, evidence, confidence, whether to start a coding agent. Every incident gets an issue (an issues-only token); a code bug goes to the runner, signed with HMAC, with the issue number and the triage's hypothesis. |
+| `app/` | Symfony 8.1 on FrankenPHP, with four planted bugs. `GET /invoices/{id}/total/{currency}` calls an exchange-rates provider that is down (`rates-api` doesn't exist): no change in the code fixes it. `POST /invoices/{id}/payments` records a payment in a deferred SQLite transaction (read, then write): it only fails under load, with `database is locked`. `GET /invoices/3` divides by zero (a draft invoice has no lines). `POST /invoices/2/reminders` answers 202, and the worker fails to send the reminder: that customer has no email address. `src/AutoRca/` claims each incident once (`mkdir` on a volume shared by the app and the worker) and queues it (Messenger, SQLite) after the response: the web app holds no API key nor token. |
+| `app/src/Triage/` | The worker (same image, `messenger:consume`). A [Symfony AI](https://symfony.com/doc/current/ai/index.html) agent on Claude Haiku 5.5 reads the incident and the code with two read-only tools (`SourceCode`), and answers with a `TriageVerdict` (structured output): category, cause, evidence, confidence, whether to start a coding agent. Every incident gets an issue (an issues-only token); a code bug goes to the runner, signed with HMAC, with the issue number and the triage's hypothesis. A message the worker gives up on, after its 3 retries (about 2 minutes), is an incident too (`WorkerFailureSubscriber`): its origin is the message's class, never its content. A failure a retry gets past is not one, and a triage that fails is never triaged in turn. |
 | `load/` | A [k6](https://k6.io) ramp-up from 1 to 40 virtual users paying invoice 1, then a check that the payments add up. |
-| `runner/` | ~120 lines of Node, no dependency. The only service with the Docker socket, no published port. Checks the signature, reads the app's last log lines, starts one agent container per incident, 2 at a time, killed after 20 minutes. |
+| `runner/` | ~120 lines of Node, no dependency. The only service with the Docker socket, no published port. Checks the signature, reads the last log lines of the container where it failed (the app or the worker), starts one agent container per incident, 2 at a time, killed after 20 minutes. |
 | `agent/` | PHP 8.4, Composer, git and Claude Code. `run.mjs` opens the issue, clones the repo at the running revision, runs `claude -p` with an allowlist of tools, then commits, pushes and opens the pull request. Claude Code never gets the GitHub token. |
 
 ## Run it
@@ -35,6 +39,7 @@ docker compose up -d app runner
 curl -i http://localhost:8090/invoices/1       # 200
 curl -i http://localhost:8090/invoices/1/total/USD   # the rates provider is down: an issue, no agent
 curl -i http://localhost:8090/invoices/3             # a code bug: an issue, then a pull request
+curl -i -X POST http://localhost:8090/invoices/2/reminders   # 202, then the worker fails: an issue ~2 minutes later
 docker compose --profile load run --rm load          # the ramp-up: ~10% of the payments fail, another one
 docker compose logs -f worker runner                 # the triage, then the coding agents
 ```

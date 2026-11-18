@@ -14,7 +14,8 @@ use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * On every server error (5xx) in production, once per distinct bug: hands
- * the incident to the worker, which triages it (see App\Triage).
+ * the incident to the worker, which triages it (see App\Triage). The worker's
+ * own failures go through WorkerFailureSubscriber.
  */
 final class AutoRcaSubscriber implements EventSubscriberInterface, ResetInterface
 {
@@ -25,7 +26,7 @@ final class AutoRcaSubscriber implements EventSubscriberInterface, ResetInterfac
         #[Autowire(env: 'bool:RCA_ENABLED')] private readonly bool $enabled,
         #[Autowire(env: 'APP_REVISION')] private readonly string $revision,
         #[Autowire('%kernel.project_dir%')] private readonly string $projectDir,
-        #[Autowire('%kernel.share_dir%/auto-rca')] private readonly string $claimDir,
+        private readonly IncidentClaims $claims,
     ) {
     }
 
@@ -49,8 +50,8 @@ final class AutoRcaSubscriber implements EventSubscriberInterface, ResetInterfac
             return;
         }
 
-        $incident = Incident::fromThrowable($e, $event->getRequest(), $this->projectDir, $this->revision);
-        if ($this->claim($incident->signature)) {
+        $incident = Incident::fromRequest($e, $event->getRequest(), $this->projectDir, $this->revision);
+        if ($this->claims->claim($incident->signature)) {
             $this->pending = $incident;
         }
     }
@@ -75,19 +76,5 @@ final class AutoRcaSubscriber implements EventSubscriberInterface, ResetInterfac
     public function reset(): void
     {
         $this->pending = null;
-    }
-
-    /**
-     * One agent per bug: the first request to create the incident's directory
-     * wins. mkdir() is atomic, so this holds across processes and workers
-     * sharing the volume, even when the same 500 comes a hundred times at once.
-     */
-    private function claim(string $signature): bool
-    {
-        if (!is_dir($this->claimDir) && !@mkdir($this->claimDir, 0o770, true) && !is_dir($this->claimDir)) {
-            return false;
-        }
-
-        return @mkdir($this->claimDir.'/'.$signature, 0o770);
     }
 }

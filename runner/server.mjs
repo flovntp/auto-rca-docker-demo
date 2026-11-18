@@ -1,5 +1,6 @@
 // The runner: the only service with access to the Docker socket. It accepts a
-// signed incident from the app, reads the app's recent logs, and starts one
+// signed incident from the worker, reads the recent logs of the container
+// where it failed (the web app or the worker itself), and starts one
 // short-lived agent container per incident, a few at a time.
 import { createServer } from 'node:http';
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -14,6 +15,7 @@ const env = (name, fallback) => {
 const SECRET = env('RCA_RUNNER_SECRET');
 const AGENT_IMAGE = env('AGENT_IMAGE', 'rca-agent:latest');
 const APP_CONTAINER = env('APP_CONTAINER');
+const WORKER_CONTAINER = env('WORKER_CONTAINER');
 const MAX_PARALLEL = Number(env('MAX_PARALLEL', '2'));
 const MAX_QUEUED = 20;
 const RUN_TIMEOUT_MS = Number(env('RUN_TIMEOUT_MINUTES', '20')) * 60_000;
@@ -48,9 +50,13 @@ function run(command, args, options = {}) {
   });
 }
 
-/** The app's last log lines: the agent gets them, never the Docker socket. */
-async function appLogs() {
-  const { output } = await run('docker', ['logs', '--since', '15m', '--tail', '300', APP_CONTAINER]);
+/**
+ * The last log lines of the container where it failed, the web app or the
+ * worker: the agent gets them, never the Docker socket.
+ */
+async function appLogs(incident) {
+  const container = incident.source === 'worker' ? WORKER_CONTAINER : APP_CONTAINER;
+  const { output } = await run('docker', ['logs', '--since', '15m', '--tail', '300', container]);
   return output.slice(-48_000);
 }
 
@@ -59,7 +65,7 @@ async function start(incident) {
   active.set(incident.signature, name);
   log(`▶ ${name}: ${incident.class} at ${incident.file}:${incident.line}`);
 
-  const agentEnv = { INCIDENT_JSON: JSON.stringify(incident), APP_LOGS: await appLogs() };
+  const agentEnv = { INCIDENT_JSON: JSON.stringify(incident), APP_LOGS: await appLogs(incident) };
   for (const key of AGENT_ENV) if (process.env[key]) agentEnv[key] = process.env[key];
   // A kernel without getrandom() (Synology): see agent/getrandom-shim.c.
   if (process.env.AGENT_PRELOAD) agentEnv.LD_PRELOAD = process.env.AGENT_PRELOAD;
