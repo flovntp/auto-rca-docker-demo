@@ -14,7 +14,9 @@ final class PaymentRecorder
     public function record(int $invoiceId, float $amount): float
     {
         $pdo = $this->database->pdo();
-        $pdo->beginTransaction();
+        // BEGIN IMMEDIATE takes the write lock before the read: a deferred transaction that reads
+        // then writes fails at once with SQLITE_BUSY when it cannot upgrade its lock, whatever the timeout.
+        $pdo->exec('BEGIN IMMEDIATE');
         try {
             $select = $pdo->prepare('SELECT paid FROM invoice_balances WHERE invoice_id = ?');
             $select->execute([$invoiceId]);
@@ -27,9 +29,9 @@ final class PaymentRecorder
             $pdo->prepare('UPDATE invoice_balances SET paid = ? WHERE invoice_id = ?')
                 ->execute([$newPaid, $invoiceId]);
 
-            $pdo->commit();
+            $pdo->exec('COMMIT');
         } catch (\Throwable $e) {
-            $pdo->rollBack();
+            $pdo->exec('ROLLBACK');
 
             throw $e;
         }
