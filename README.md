@@ -28,11 +28,13 @@ too).
 
 ## Run it
 
-You need Docker, a GitHub repository you can push to (a fork of this one), and an Anthropic API key.
+You need Docker, a GitHub repository you can push to (a fork of this one), and an Anthropic API key. GitHub turns Issues
+and Actions off on a fork: enable Issues in Settings › General › Features (the agent starts by opening an issue) and
+workflows in the Actions tab (otherwise CI won't run on the pull request).
 
 ```bash
 git clone https://github.com/flovntp/auto-rca-docker-demo && cd auto-rca-docker-demo
-cp .env.example .env   # fill it in: secrets, API key, GitHub token and repository
+cp .env.example .env   # fill it in: secrets, API key, GitHub token, and GITHUB_REPO=your-account/auto-rca-docker-demo
 echo "APP_REVISION=$(git rev-parse --short HEAD)" >> .env
 docker compose --profile build-only build      # app, runner and the agent image
 docker compose up -d app runner
